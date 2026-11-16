@@ -461,18 +461,44 @@ const SYNC_DOT = {
   error: 'bg-red-500',
 }
 
-function UserMenu({ session, syncStatus, onSignIn, onSignOut, onSyncNow }) {
+function UserMenu({ session, authReady, syncStatus, onSignIn, onSignOut, onSyncNow }) {
   const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [blink, setBlink] = useState(false)
   const menuRef = useRef(null)
+  const autoOpened = useRef(false)
+  const timers = useRef([])
+
+  const later = (fn, ms) => timers.current.push(setTimeout(fn, ms))
+  useEffect(() => () => timers.current.forEach(clearTimeout), [])
+
+  // On launch, show the menu once if nobody is signed in
+  useEffect(() => {
+    if (!supabase || !authReady || autoOpened.current) return
+    autoOpened.current = true
+    if (!session) setOpen(true)
+  }, [authReady, session])
+
+  // Shrink the menu back into the icon, then blink the icon so it's clear where it lives
+  const dismiss = () => {
+    if (closing) return
+    setClosing(true)
+    later(() => {
+      setOpen(false)
+      setClosing(false)
+      setBlink(true)
+      later(() => setBlink(false), 1400)
+    }, 220)
+  }
 
   // Close when clicking outside or pressing Escape
   useEffect(() => {
     if (!open) return
     const onPointerDown = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false)
+      if (menuRef.current && !menuRef.current.contains(e.target)) dismiss()
     }
     const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') dismiss()
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKey)
@@ -480,7 +506,7 @@ function UserMenu({ session, syncStatus, onSignIn, onSignOut, onSyncNow }) {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  })
 
   if (!supabase) return null
 
@@ -494,13 +520,13 @@ function UserMenu({ session, syncStatus, onSignIn, onSignOut, onSyncNow }) {
   return (
     <div className="relative" ref={menuRef}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? dismiss() : setOpen(true))}
         aria-label={email ? `Account: ${email}` : 'Account'}
         aria-haspopup="menu"
         aria-expanded={open}
         className={`relative w-12 h-12 rounded-full flex items-center justify-center font-semibold text-lg shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
           email ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-        }`}
+        } ${blink ? 'user-icon-blink' : ''}`}
       >
         {initial || <UserIcon className="w-6 h-6" />}
         {email && (
@@ -513,7 +539,9 @@ function UserMenu({ session, syncStatus, onSignIn, onSignOut, onSyncNow }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-gray-200 z-40 overflow-hidden"
+          className={`absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-gray-200 z-40 overflow-hidden ${
+            closing ? 'user-menu-out' : 'user-menu-in'
+          }`}
         >
           {email ? (
             <>
@@ -550,6 +578,10 @@ function UserMenu({ session, syncStatus, onSignIn, onSignOut, onSyncNow }) {
               <p className="text-sm text-gray-600">
                 Your data is saved on this device only. Sign in to keep it in sync across your phone and computer.
               </p>
+              <p className="text-sm text-gray-600">
+                Once you sign in, your preferences and history are kept in your account, so they come back every
+                time you sign in again, even after signing out or on a new device.
+              </p>
               <button
                 role="menuitem"
                 onClick={run(onSignIn)}
@@ -573,6 +605,7 @@ function App() {
   const [showPreferences, setShowPreferences] = useState(false)
   const [showSignIn, setShowSignIn] = useState(false)
   const [session, setSession] = useState(null)
+  const [authReady, setAuthReady] = useState(false)
   const [syncStatus, setSyncStatus] = useState('idle')
 
   const userId = session?.user?.id
@@ -581,7 +614,10 @@ function App() {
   // Keep track of who is signed in
   useEffect(() => {
     if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setAuthReady(true)
+    })
     const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
     return () => data.subscription.unsubscribe()
   }, [])
@@ -671,6 +707,7 @@ function App() {
               </button>
               <UserMenu
                 session={session}
+                authReady={authReady}
                 syncStatus={syncStatus}
                 onSignIn={() => setShowSignIn(true)}
                 onSignOut={handleSignOut}
