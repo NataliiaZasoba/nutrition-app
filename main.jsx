@@ -55,8 +55,8 @@ const DEFAULT_LIMITS = {
   vegetables: 400,
   meat: 150,
   carbohydrates: 250,
-  cheese: 50,
   fats: 70,
+  cheese: 50,
   sourMilk: 200,
   fruits: 300,
   nuts: 30,
@@ -67,8 +67,8 @@ const EMPTY_CONSUMED = {
   vegetables: 0,
   meat: 0,
   carbohydrates: 0,
-  cheese: 0,
   fats: 0,
+  cheese: 0,
   sourMilk: 0,
   fruits: 0,
   nuts: 0,
@@ -177,16 +177,17 @@ function NutrientCard({ label, icon, limit, consumed, unit, displayMode, onChang
       />
 
       <div className="flex items-center gap-2">
-        <label className="text-sm text-gray-600">Consumed:</label>
+        <label className="shrink-0 text-sm text-gray-600">Consumed:</label>
         <input
           type="number"
+          inputMode="decimal"
           min="0"
           step="1"
           value={consumed}
           onChange={handleInput}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 min-w-0 w-full px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <span className="text-sm text-gray-600 w-12">{unit}</span>
+        <span className="shrink-0 text-sm text-gray-600">{unit}</span>
       </div>
 
       <div className="text-right text-sm text-gray-500">
@@ -295,23 +296,24 @@ function PreferencesModal({ limits, onSave, onClose }) {
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-4 space-y-4">
           {Object.keys(DEFAULT_LIMITS).map((key) => (
-            <div key={key} className="flex items-center justify-between">
-              <label className="text-gray-700 font-medium w-48 flex items-center gap-2">
+            <div key={key} className="flex items-center justify-between gap-3">
+              <label className="min-w-0 flex-1 text-gray-700 font-medium flex items-center gap-2">
                 <span className="text-xl leading-none" aria-hidden="true">
                   {ICONS[key]}
                 </span>
                 {LABELS[key]}
               </label>
-              <div className="flex items-center gap-2">
+              <div className="shrink-0 flex items-center gap-2">
                 <input
                   type="number"
+                  inputMode="decimal"
                   min="0"
                   step={key === 'calories' ? '10' : '1'}
                   value={draft[key] ?? DEFAULT_LIMITS[key]}
                   onChange={(e) => handleChange(key, e.target.value)}
-                  className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-20 sm:w-32 px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-gray-600 w-16">{key === 'calories' ? 'kcal' : 'g'}</span>
+                <span className="text-gray-600 w-9">{key === 'calories' ? 'kcal' : 'g'}</span>
               </div>
             </div>
           ))}
