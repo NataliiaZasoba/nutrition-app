@@ -179,7 +179,7 @@ function NutrientCard({ label, limit, consumed, unit, displayMode, onChange, col
   )
 }
 
-function Dashboard({ limits, consumed, displayMode, onToggleDisplayMode, onUpdateConsumed, onClear }) {
+function Dashboard({ limits, consumed, displayMode, onChangeDisplayMode, onUpdateConsumed, onClear }) {
   const calories = totalCalories(consumed)
   const caloriesPct = percent(limits.calories, calories)
   const caloriesLeft = remaining(limits.calories, calories)
@@ -196,12 +196,24 @@ function Dashboard({ limits, consumed, displayMode, onToggleDisplayMode, onUpdat
             >
               Clear
             </button>
-            <button
-              onClick={onToggleDisplayMode}
-              className="bg-white text-blue-600 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition-colors"
-            >
-              {displayMode === 'percentage' ? 'Show Grams' : 'Show Percentage'}
-            </button>
+            <div role="radiogroup" aria-label="Show amounts in" className="flex bg-white/20 rounded-lg p-1">
+              {[
+                ['grams', 'Grams'],
+                ['percentage', '%'],
+              ].map(([mode, label]) => (
+                <button
+                  key={mode}
+                  role="radio"
+                  aria-checked={displayMode === mode}
+                  onClick={() => onChangeDisplayMode(mode)}
+                  className={`px-4 py-1.5 rounded-md font-medium transition-colors ${
+                    displayMode === mode ? 'bg-white text-blue-700 shadow' : 'text-white hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -283,16 +295,16 @@ function PreferencesModal({ limits, onSave, onClose }) {
 
         <div className="shrink-0 flex gap-3 px-6 py-4 border-t border-gray-200 bg-white">
           <button
-            onClick={handleSave}
-            className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-          >
-            Save Preferences
-          </button>
-          <button
             onClick={onClose}
             className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors font-medium"
           >
             Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            Save Preferences
           </button>
         </div>
       </div>
@@ -580,10 +592,6 @@ function App() {
     scheduleSync()
   }
 
-  const toggleDisplayMode = () => {
-    setDisplayMode((mode) => (mode === 'grams' ? 'percentage' : 'grams'))
-  }
-
   const clearToday = () => {
     setConsumed(EMPTY_CONSUMED)
     saveDay(date, EMPTY_CONSUMED)
@@ -612,7 +620,7 @@ function App() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowPreferences(true)}
-                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-md hover:shadow-lg"
+                className="bg-white text-gray-800 border border-gray-300 px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors font-medium"
               >
                 ⚙️ Preferences
               </button>
@@ -633,7 +641,7 @@ function App() {
           limits={limits}
           consumed={consumed}
           displayMode={displayMode}
-          onToggleDisplayMode={toggleDisplayMode}
+          onChangeDisplayMode={setDisplayMode}
           onUpdateConsumed={handleUpdateConsumed}
           onClear={clearToday}
         />
