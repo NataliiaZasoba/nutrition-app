@@ -1,3 +1,58 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* User menu: grows out of the user icon (top right) and shrinks back into it */
+.user-menu-in {
+  transform-origin: top right;
+  animation: user-menu-in 180ms ease-out;
+}
+
+.user-menu-out {
+  transform-origin: top right;
+  animation: user-menu-out 220ms ease-in forwards;
+}
+
+@keyframes user-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes user-menu-out {
+  to {
+    opacity: 0;
+    transform: translate(8px, -24px) scale(0.2);
+  }
+}
+
+/* Blink the user icon after the menu closes, so people see where it came from */
+.user-icon-blink {
+  animation: user-icon-blink 450ms ease-in-out 3;
+}
+
+@keyframes user-icon-blink {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-menu-in,
+  .user-menu-out,
+  .user-icon-blink {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
+  }
+}
