@@ -10,6 +10,7 @@ import {
   syncWithCloud,
   clearLocalData,
 } from './sync.js'
+import Welcome, { hasSeenWelcome, markWelcomeSeen } from './welcome.jsx'
 
 // Calories per 100 g of each food group
 const CALORIES_PER_100G = {
@@ -607,6 +608,7 @@ function App() {
   const [session, setSession] = useState(null)
   const [authReady, setAuthReady] = useState(false)
   const [syncStatus, setSyncStatus] = useState('idle')
+  const [showWelcome, setShowWelcome] = useState(() => !hasSeenWelcome())
 
   const userId = session?.user?.id
   const pushTimer = useRef(null)
@@ -687,6 +689,14 @@ function App() {
     setConsumed(EMPTY_CONSUMED)
     setSyncStatus('idle')
   }
+
+  const openTracker = () => {
+    markWelcomeSeen()
+    setShowWelcome(false)
+    window.scrollTo(0, 0)
+  }
+
+  if (showWelcome) return <Welcome onOpen={openTracker} />
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
