@@ -37,6 +37,19 @@ const LABELS = {
   sweets: 'Sweets',
 }
 
+const ICONS = {
+  calories: '🔥',
+  vegetables: '🥦',
+  meat: '🥩',
+  carbohydrates: '🍞',
+  cheese: '🧀',
+  fats: '🧈',
+  sourMilk: '🥛',
+  fruits: '🍎',
+  nuts: '🥜',
+  sweets: '🍫',
+}
+
 const DEFAULT_LIMITS = {
   calories: 2000,
   vegetables: 400,
@@ -112,7 +125,7 @@ function formatDate(key) {
 
 // ---------- components ----------
 
-function NutrientCard({ label, limit, consumed, unit, displayMode, onChange, color }) {
+function NutrientCard({ label, icon, limit, consumed, unit, displayMode, onChange, color }) {
   const pct = percent(limit, consumed)
   const left = remaining(limit, consumed)
 
@@ -132,7 +145,12 @@ function NutrientCard({ label, limit, consumed, unit, displayMode, onChange, col
   return (
     <div className="bg-white rounded-lg shadow-md p-4 space-y-3">
       <div className="flex justify-between items-center">
-        <h3 className="font-semibold text-gray-800">{label}</h3>
+        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+          <span className="text-2xl leading-none" aria-hidden="true">
+            {icon}
+          </span>
+          {label}
+        </h3>
         <span className="text-sm text-gray-600">
           Remaining:{' '}
           <span className="font-medium">
@@ -241,6 +259,7 @@ function Dashboard({ limits, consumed, displayMode, onChangeDisplayMode, onUpdat
           <NutrientCard
             key={key}
             label={LABELS[key]}
+            icon={ICONS[key]}
             limit={limits[key] ?? DEFAULT_LIMITS[key]}
             consumed={consumed[key] || 0}
             unit="g"
@@ -277,7 +296,12 @@ function PreferencesModal({ limits, onSave, onClose }) {
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-4 space-y-4">
           {Object.keys(DEFAULT_LIMITS).map((key) => (
             <div key={key} className="flex items-center justify-between">
-              <label className="text-gray-700 font-medium w-48">{LABELS[key]}</label>
+              <label className="text-gray-700 font-medium w-48 flex items-center gap-2">
+                <span className="text-xl leading-none" aria-hidden="true">
+                  {ICONS[key]}
+                </span>
+                {LABELS[key]}
+              </label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
