@@ -1,6 +1,15 @@
-import { StrictMode, useEffect, useState } from 'react'
+import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import {
+  supabase,
+  loadLimits,
+  loadDay,
+  saveLimits,
+  saveDay,
+  syncWithCloud,
+  clearLocalData,
+} from './sync.js'
 
 // Calories per 100 g of each food group
 const CALORIES_PER_100G = {
@@ -70,7 +79,7 @@ const BAR_COLORS = {
 function totalCalories(consumed) {
   let total = 0
   Object.keys(consumed).forEach((key) => {
-    total += (consumed[key] * CALORIES_PER_100G[key]) / 100
+    total += ((consumed[key] || 0) * CALORIES_PER_100G[key]) / 100
   })
   return Math.round(total)
 }
@@ -84,33 +93,21 @@ function percent(limit, consumed) {
   return Math.min(100, Math.round((consumed / limit) * 100))
 }
 
-// ---------- storage (localStorage, per device) ----------
-
-const STORAGE_KEYS = {
-  DAILY_LIMITS: 'nutrition_daily_limits',
-  CONSUMED_AMOUNTS: 'nutrition_consumed_',
-}
-
-function saveLimits(limits) {
-  localStorage.setItem(STORAGE_KEYS.DAILY_LIMITS, JSON.stringify(limits))
-}
-
-function loadLimits() {
-  const raw = localStorage.getItem(STORAGE_KEYS.DAILY_LIMITS)
-  return raw ? JSON.parse(raw) : null
-}
-
-function saveConsumed(date, consumed) {
-  localStorage.setItem(STORAGE_KEYS.CONSUMED_AMOUNTS + date, JSON.stringify(consumed))
-}
-
-function loadConsumed(date) {
-  const raw = localStorage.getItem(STORAGE_KEYS.CONSUMED_AMOUNTS + date)
-  return raw ? JSON.parse(raw) : null
-}
-
+// Local calendar date (not UTC), e.g. "2026-11-16"
 function todayKey() {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function formatDate(key) {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
 }
 
 // ---------- components ----------
@@ -228,12 +225,12 @@ function Dashboard({ limits, consumed, displayMode, onToggleDisplayMode, onUpdat
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {Object.keys(consumed).map((key) => (
+        {Object.keys(EMPTY_CONSUMED).map((key) => (
           <NutrientCard
             key={key}
             label={LABELS[key]}
-            limit={limits[key]}
-            consumed={consumed[key]}
+            limit={limits[key] ?? DEFAULT_LIMITS[key]}
+            consumed={consumed[key] || 0}
             unit="g"
             displayMode={displayMode}
             onChange={(value) => onUpdateConsumed(key, value)}
@@ -264,7 +261,7 @@ function PreferencesModal({ limits, onSave, onClose }) {
         <h2 className="text-2xl font-bold mb-6 text-gray-800">Daily Nutrition Preferences</h2>
 
         <div className="space-y-4">
-          {Object.keys(draft).map((key) => (
+          {Object.keys(DEFAULT_LIMITS).map((key) => (
             <div key={key} className="flex items-center justify-between">
               <label className="text-gray-700 font-medium w-48">{LABELS[key]}</label>
               <div className="flex items-center gap-2">
@@ -272,7 +269,7 @@ function PreferencesModal({ limits, onSave, onClose }) {
                   type="number"
                   min="0"
                   step={key === 'calories' ? '10' : '1'}
-                  value={draft[key]}
+                  value={draft[key] ?? DEFAULT_LIMITS[key]}
                   onChange={(e) => handleChange(key, e.target.value)}
                   className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -301,24 +298,190 @@ function PreferencesModal({ limits, onSave, onClose }) {
   )
 }
 
+function SignInModal({ onClose }) {
+  const [email, setEmail] = useState('')
+  const [status, setStatus] = useState('idle') // idle | sending | sent | error
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setStatus('sending')
+    setError('')
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    })
+    if (error) {
+      setError(error.message)
+      setStatus('error')
+    } else {
+      setStatus('sent')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+        <h2 className="text-2xl font-bold mb-2 text-gray-800">Sign in</h2>
+        <p className="text-gray-600 mb-6">
+          Your limits and history will be saved to your account and appear on any device you sign in on.
+        </p>
+
+        {status === 'sent' ? (
+          <div className="space-y-6">
+            <p className="text-gray-800">
+              We sent a sign-in link to <span className="font-semibold">{email}</span>. Open it on this
+              device to finish signing in.
+            </p>
+            <button
+              onClick={onClose}
+              className="w-full bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <label className="block text-gray-700 font-medium" htmlFor="email">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {status === 'error' && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={status === 'sending'}
+                className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-60"
+              >
+                {status === 'sending' ? 'Sending…' : 'Send sign-in link'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 bg-gray-200 text-gray-800 px-6 py-3 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const SYNC_LABELS = {
+  idle: '',
+  syncing: 'Syncing…',
+  synced: 'Synced',
+  error: 'Not synced — will retry',
+}
+
+function AccountBar({ session, syncStatus, onSignIn, onSignOut }) {
+  if (!supabase) return null
+
+  if (!session) {
+    return (
+      <p className="text-sm text-gray-600 mt-2">
+        Saved on this device only.{' '}
+        <button onClick={onSignIn} className="text-blue-600 font-medium hover:underline">
+          Sign in to sync
+        </button>
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-sm text-gray-600 mt-2">
+      {session.user.email}
+      {SYNC_LABELS[syncStatus] && (
+        <span className={syncStatus === 'error' ? 'text-red-600' : ''}> · {SYNC_LABELS[syncStatus]}</span>
+      )}{' '}
+      ·{' '}
+      <button onClick={onSignOut} className="text-blue-600 font-medium hover:underline">
+        Sign out
+      </button>
+    </p>
+  )
+}
+
 function App() {
   const [date] = useState(todayKey())
   const [limits, setLimits] = useState(() => loadLimits() || DEFAULT_LIMITS)
-  const [consumed, setConsumed] = useState(() => loadConsumed(todayKey()) || EMPTY_CONSUMED)
+  const [consumed, setConsumed] = useState(() => loadDay(todayKey()) || EMPTY_CONSUMED)
   const [displayMode, setDisplayMode] = useState('grams')
   const [showPreferences, setShowPreferences] = useState(false)
+  const [showSignIn, setShowSignIn] = useState(false)
+  const [session, setSession] = useState(null)
+  const [syncStatus, setSyncStatus] = useState('idle')
 
+  const userId = session?.user?.id
+  const pushTimer = useRef(null)
+
+  // Keep track of who is signed in
   useEffect(() => {
-    saveConsumed(date, consumed)
-  }, [consumed, date])
+    if (!supabase) return
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    return () => data.subscription.unsubscribe()
+  }, [])
+
+  const sync = useCallback(async () => {
+    if (!userId) return
+    setSyncStatus('syncing')
+    try {
+      await syncWithCloud(userId)
+      // Read back from the device so edits made during the sync aren't lost
+      setLimits(loadLimits() || DEFAULT_LIMITS)
+      setConsumed(loadDay(date) || EMPTY_CONSUMED)
+      setSyncStatus('synced')
+    } catch (err) {
+      console.error('Sync failed', err)
+      setSyncStatus('error')
+    }
+  }, [userId, date])
+
+  // Sync on sign-in and whenever the app comes back to the foreground
+  useEffect(() => {
+    if (!userId) return
+    sync()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', sync)
+    }
+  }, [userId, sync])
+
+  // After an edit, wait for a pause, then sync
+  const scheduleSync = () => {
+    if (!userId) return
+    clearTimeout(pushTimer.current)
+    pushTimer.current = setTimeout(sync, 1000)
+  }
 
   const handleSaveLimits = (newLimits) => {
     setLimits(newLimits)
     saveLimits(newLimits)
+    scheduleSync()
   }
 
   const handleUpdateConsumed = (key, value) => {
-    setConsumed((prev) => ({ ...prev, [key]: value }))
+    const next = { ...consumed, [key]: value }
+    setConsumed(next)
+    saveDay(date, next)
+    scheduleSync()
   }
 
   const toggleDisplayMode = () => {
@@ -327,6 +490,18 @@ function App() {
 
   const clearToday = () => {
     setConsumed(EMPTY_CONSUMED)
+    saveDay(date, EMPTY_CONSUMED)
+    scheduleSync()
+  }
+
+  const handleSignOut = async () => {
+    clearTimeout(pushTimer.current)
+    await sync() // save any last changes first
+    await supabase.auth.signOut()
+    clearLocalData() // don't leave your data on a shared device
+    setLimits(DEFAULT_LIMITS)
+    setConsumed(EMPTY_CONSUMED)
+    setSyncStatus('idle')
   }
 
   return (
@@ -336,14 +511,7 @@ function App() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Nutrition Tracker</h1>
-              <p className="text-gray-600 mt-1">
-                {new Date(date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
+              <p className="text-gray-600 mt-1">{formatDate(date)}</p>
             </div>
             <button
               onClick={() => setShowPreferences(true)}
@@ -352,6 +520,12 @@ function App() {
               ⚙️ Preferences
             </button>
           </div>
+          <AccountBar
+            session={session}
+            syncStatus={syncStatus}
+            onSignIn={() => setShowSignIn(true)}
+            onSignOut={handleSignOut}
+          />
         </div>
       </header>
 
@@ -373,6 +547,8 @@ function App() {
           onClose={() => setShowPreferences(false)}
         />
       )}
+
+      {showSignIn && <SignInModal onClose={() => setShowSignIn(false)} />}
     </div>
   )
 }
